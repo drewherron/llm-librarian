@@ -115,6 +115,35 @@ def extract_epub_data(epub_path):
             "extracted_text": f"Error processing file: {e}"
         }
 
+def extract_mobi_azw3_data(ebook_path):
+    """
+    Basic extraction for MOBI and AZW3 files.
+    Note: For robust MOBI/AZW3 parsing, additional libraries may be needed.
+    
+    Args:
+        ebook_path (str): The path to the MOBI or AZW3 file.
+        
+    Returns:
+        ebook_data (dict): A dictionary containing minimal information.
+    """
+    # For MOBI/AZW3, we'll just extract the filename as fallback data
+    # In a production app, you'd use a dedicated library like mobi or KindleUnpack
+    filename = os.path.basename(ebook_path)
+    
+    # Try to extract title/author from filename pattern like "Title - Author.mobi"
+    parts = filename.rsplit('.', 1)[0].split(' - ', 1)
+    
+    title = parts[0] if len(parts) > 0 else "Unknown"
+    author = parts[1] if len(parts) > 1 else "Unknown"
+    
+    ebook_data = {
+        "title": title,
+        "author": author,
+        "extracted_text": f"Limited metadata extraction for {os.path.basename(ebook_path)}"
+    }
+    
+    return ebook_data
+
 def extract_ebook_data(ebook_path):
     """
     Extract data from an ebook file based on its extension.
@@ -131,6 +160,8 @@ def extract_ebook_data(ebook_path):
         return extract_pdf_data(ebook_path)
     elif file_ext == '.epub':
         return extract_epub_data(ebook_path)
+    elif file_ext in ['.mobi', '.azw3']:
+        return extract_mobi_azw3_data(ebook_path)
     else:
         # Return basic data for unsupported formats
         return {
@@ -147,7 +178,7 @@ def main():
     for root, _, files in os.walk(args.ebook_dir):
         for file in files:
             file_ext = os.path.splitext(file)[1].lower()
-            if file_ext in ['.pdf', '.epub']:
+            if file_ext in ['.pdf', '.epub', '.mobi', '.azw3']:
                 ebook_path = os.path.join(root, file)
                 print(f"Processing {ebook_path}...")
                 ebook_data = extract_ebook_data(ebook_path)
