@@ -2,6 +2,8 @@
 
 import os
 import re
+import sys
+import shutil
 import argparse
 import warnings
 import pdfplumber
@@ -170,21 +172,106 @@ def extract_ebook_data(ebook_path):
             "extracted_text": f"Unsupported file format: {file_ext}"
         }
 
-def main():
-    args = get_args()
-    print(f"Will organize ebooks from {args.ebook_dir} to {args.output_dir}")
+def copy_ebook(ebook_path, ebook_info, output_dir):
+    """
+    Renames the ebook and copies the file to the appropriate directory.
+
+    Args:
+        ebook_path (str): The current path of the ebook file.
+        ebook_info (dict): A dictionary containing title, author.
+        output_dir (str): The base output directory for organizing the ebooks.
+
+    Returns:
+        new_path (str): The path of the copied ebook file.
+    """
+    # Get the file extension
+    file_ext = os.path.splitext(ebook_path)[1].lower()
+
+    # Clean values for filesystem use
+    author = ebook_info.get('author', 'Unknown Author').replace('/', '-')
+    title = ebook_info.get('title', 'Untitled').replace('/', '-')
     
-    # Look for ebooks
-    for root, _, files in os.walk(args.ebook_dir):
+    # Default category is 'Uncategorized'
+    category = 'Uncategorized'
+    
+    # Create new filename
+    new_filename = f"{title} - {author}{file_ext}"
+
+    # Create the new directory path based on category
+    new_dir = os.path.join(output_dir, category)
+    os.makedirs(new_dir, exist_ok=True)
+
+    # Create the new full path for the file
+    new_path = os.path.join(new_dir, new_filename)
+
+    # Copy the file
+    shutil.copy2(ebook_path, new_path)
+
+    return new_path
+
+def organize_ebooks(ebook_directory, output_dir):
+    """
+    Organize ebooks by copying them to appropriate directories.
+
+    Args:
+        ebook_directory (str): The directory containing ebook files and subdirectories.
+        output_dir (str): The output directory for organized ebooks.
+
+    Returns:
+        organized_files (list): List of organized file paths
+    """
+    organized_files = []
+
+    # Recursively search for all ebook files
+    ebook_files = []
+    for root, _, files in os.walk(ebook_directory):
         for file in files:
             file_ext = os.path.splitext(file)[1].lower()
             if file_ext in ['.pdf', '.epub', '.mobi', '.azw3']:
-                ebook_path = os.path.join(root, file)
-                print(f"Processing {ebook_path}...")
-                ebook_data = extract_ebook_data(ebook_path)
-                print(f"Title: {ebook_data['title']}")
-                print(f"Author: {ebook_data['author']}")
-                print("-" * 40)
+                ebook_files.append(os.path.join(root, file))
+
+    if len(ebook_files) == 0:
+        print(f"No ebooks found in {ebook_directory}")
+        return organized_files
+    
+    # Ensure the output directory exists
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Organize each found ebook
+    for ebook_path in ebook_files:
+        print(f"Processing {ebook_path}...")
+        
+        # Get ebook data
+        ebook_data = extract_ebook_data(ebook_path)
+        print(f"Title: {ebook_data['title']}")
+        print(f"Author: {ebook_data['author']}")
+        
+        # Copy the ebook to the output directory
+        new_path = copy_ebook(ebook_path, ebook_data, output_dir)
+        print(f"Copied to: {new_path}")
+        print("-" * 40)
+        
+        organized_files.append({
+            'original_path': ebook_path,
+            'new_path': new_path,
+            'title': ebook_data['title'],
+            'author': ebook_data['author']
+        })
+        
+    return organized_files
+
+def main():
+    args = get_args()
+    
+    # Confirm with the user
+    confirmation = input(f"This will categorize all ebooks (PDF, EPUB, MOBI, AZW3) in {args.ebook_dir} and all subdirectories, and copy them to {args.output_dir}\nAre you sure you want to proceed? (y/n)\n>> ")
+    
+    if confirmation.lower() == "y":
+        print(f"Organizing ebooks...")
+        organized_files = organize_ebooks(args.ebook_dir, args.output_dir)
+        print(f"\nOrganized {len(organized_files)} ebook files to {args.output_dir}")
+    else:
+        print("\nAborting.\n")
 
 if __name__ == "__main__":
     main()
