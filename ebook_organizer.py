@@ -172,6 +172,61 @@ def extract_ebook_data(ebook_path):
             "extracted_text": f"Unsupported file format: {file_ext}"
         }
 
+def determine_category(ebook_data):
+    """
+    Determine a category for the ebook based on its metadata.
+    
+    Args:
+        ebook_data (dict): A dictionary containing ebook metadata.
+        
+    Returns:
+        category (str): The determined category.
+    """
+    # Default category
+    category = 'Uncategorized'
+    
+    # List of standard categories
+    categories = [
+        "Fiction", "Non-Fiction", "History", "Philosophy", "Technology",
+        "Science", "Biography", "Self-Help", "Fantasy", "Mystery", "Romance",
+        "Horror", "Health & Wellness", "Travel", "Politics", "Economics",
+        "Art & Design", "Religion & Spirituality", "Education", "Cooking",
+        "Children's Books", "Poetry", "Drama", "Science Fiction", "Business & Management"
+    ]
+    
+    # Simple categorization based on title and extracted text
+    title = ebook_data.get('title', '').lower()
+    text = ebook_data.get('extracted_text', '').lower()
+    
+    # Check for technology/programming books
+    tech_keywords = ['programming', 'python', 'java', 'javascript', 'code', 'coding', 
+                    'development', 'software', 'computer', 'web', 'database', 'data', 
+                    'algorithm', 'cloud', 'network', 'security', 'hacking', 'linux', 
+                    'windows', 'server', 'machine learning', 'ai', 'artificial intelligence']
+    
+    for keyword in tech_keywords:
+        if keyword in title or keyword in text:
+            return 'Technology'
+    
+    # Check for fiction books
+    fiction_keywords = ['novel', 'fiction', 'story', 'stories', 'fantasy', 'adventure', 
+                       'mystery', 'thriller', 'horror', 'romance', 'sci-fi', 'science fiction']
+    
+    for keyword in fiction_keywords:
+        if keyword in title or keyword in text:
+            return 'Fiction'
+    
+    # Check for business books
+    business_keywords = ['business', 'management', 'leadership', 'marketing', 'economics', 
+                        'finance', 'investing', 'stock', 'entrepreneur', 'startup']
+    
+    for keyword in business_keywords:
+        if keyword in title or keyword in text:
+            return 'Business & Management'
+    
+    # Return default category if no match
+    return category
+
 def copy_ebook(ebook_path, ebook_info, output_dir):
     """
     Renames the ebook and copies the file to the appropriate directory.
@@ -191,8 +246,8 @@ def copy_ebook(ebook_path, ebook_info, output_dir):
     author = ebook_info.get('author', 'Unknown Author').replace('/', '-')
     title = ebook_info.get('title', 'Untitled').replace('/', '-')
     
-    # Default category is 'Uncategorized'
-    category = 'Uncategorized'
+    # Determine category
+    category = ebook_info.get('category', 'Uncategorized')
     
     # Create new filename
     new_filename = f"{title} - {author}{file_ext}"
@@ -243,8 +298,14 @@ def organize_ebooks(ebook_directory, output_dir):
         
         # Get ebook data
         ebook_data = extract_ebook_data(ebook_path)
+        
+        # Determine category
+        category = determine_category(ebook_data)
+        ebook_data['category'] = category
+        
         print(f"Title: {ebook_data['title']}")
         print(f"Author: {ebook_data['author']}")
+        print(f"Category: {category}")
         
         # Copy the ebook to the output directory
         new_path = copy_ebook(ebook_path, ebook_data, output_dir)
