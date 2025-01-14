@@ -21,6 +21,9 @@ def get_args():
                        help="Directory containing ebook files to organize")
     parser.add_argument("output_dir",
                        help="Directory where organized ebooks will be copied")
+    parser.add_argument("-i", "--instructions",
+                       metavar="INSTRUCTION_FILE",
+                       help="Path to a text file containing additional instructions for categorization")
     return parser.parse_args()
 
 def extract_pdf_data(pdf_path):
@@ -264,7 +267,7 @@ def copy_ebook(ebook_path, ebook_info, output_dir):
 
     return new_path
 
-def organize_ebooks(ebook_directory, output_dir):
+def organize_ebooks(ebook_directory, output_dir, additional_instructions=""):
     """
     Organize ebooks by copying them to appropriate directories.
 
@@ -324,12 +327,23 @@ def organize_ebooks(ebook_directory, output_dir):
 def main():
     args = get_args()
     
+    # Check for instruction file
+    additional_instructions = ""
+    if args.instructions:
+        try:
+            with open(args.instructions, 'r') as f:
+                additional_instructions = f.read().strip()
+            print(f"Loaded additional instructions from {args.instructions}")
+        except Exception as e:
+            print(f"Error loading instructions file: {e}")
+            return
+    
     # Confirm with the user
     confirmation = input(f"This will categorize all ebooks (PDF, EPUB, MOBI, AZW3) in {args.ebook_dir} and all subdirectories, and copy them to {args.output_dir}\nAre you sure you want to proceed? (y/n)\n>> ")
     
     if confirmation.lower() == "y":
         print(f"Organizing ebooks...")
-        organized_files = organize_ebooks(args.ebook_dir, args.output_dir)
+        organized_files = organize_ebooks(args.ebook_dir, args.output_dir, additional_instructions)
         print(f"\nOrganized {len(organized_files)} ebook files to {args.output_dir}")
     else:
         print("\nAborting.\n")
