@@ -1,0 +1,7 @@
+Only organize books about programming. Skip all other types of books.
+Organize them into directories named after the programming language (e.g., "Python", "JavaScript", "C++").
+Use the following format for filenames (where possible): {title} - {author} - {year}
+If the book discusses multiple programming languages, categorize it under the primary language.
+If it's a general programming book not specific to a language, use "Programming" as the category.
+For web development books, use the primary technology (e.g., "React", "Django") as the subcategory within the language.
+For cloud platforms, the directory might be "AWS", "GCP", "Azure", etc.
