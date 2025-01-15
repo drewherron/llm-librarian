@@ -175,7 +175,7 @@ def extract_ebook_data(ebook_path):
             "extracted_text": f"Unsupported file format: {file_ext}"
         }
 
-def determine_category(ebook_data):
+def determine_category(ebook_data, additional_instructions=""):
     """
     Determine a category for the ebook based on its metadata.
     
@@ -197,7 +197,39 @@ def determine_category(ebook_data):
         "Children's Books", "Poetry", "Drama", "Science Fiction", "Business & Management"
     ]
     
-    # Simple categorization based on title and extracted text
+    # Check if we have custom instructions for categorization
+    if additional_instructions and "organize them into directories named after" in additional_instructions.lower():
+        # This is likely programming language categorization
+        if "programming language" in additional_instructions.lower():
+            # Check specifically for programming books
+            title = ebook_data.get('title', '').lower()
+            text = ebook_data.get('extracted_text', '').lower()
+            
+            # Common programming languages
+            languages = [
+                'python', 'javascript', 'java', 'c++', 'c#', 'ruby', 'go', 
+                'rust', 'swift', 'kotlin', 'php', 'typescript', 'perl', 
+                'scala', 'haskell', 'r', 'matlab', 'sql', 'html', 'css'
+            ]
+            
+            # Check for language-specific books
+            for lang in languages:
+                # Avoid false positives like "got" for "go"
+                if lang == 'go' and ('got' in title or 'got' in text or 'going' in title or 'going' in text):
+                    continue
+                    
+                if lang in title or lang in text:
+                    return lang.capitalize()
+            
+            # If it's programming but not language-specific
+            if any(term in title or term in text for term in ['programming', 'code', 'developer', 'software']):
+                return 'Programming'
+            
+            # Skip non-programming books if instructed
+            if "skip all other types of books" in additional_instructions.lower():
+                return None
+    
+    # Standard categorization if no custom instructions or the book doesn't match custom criteria
     title = ebook_data.get('title', '').lower()
     text = ebook_data.get('extracted_text', '').lower()
     
@@ -230,7 +262,7 @@ def determine_category(ebook_data):
     # Return default category if no match
     return category
 
-def copy_ebook(ebook_path, ebook_info, output_dir):
+def copy_ebook(ebook_path, ebook_info, output_dir, additional_instructions=""):
     """
     Renames the ebook and copies the file to the appropriate directory.
 
@@ -238,6 +270,7 @@ def copy_ebook(ebook_path, ebook_info, output_dir):
         ebook_path (str): The current path of the ebook file.
         ebook_info (dict): A dictionary containing title, author.
         output_dir (str): The base output directory for organizing the ebooks.
+        additional_instructions (str): Optional custom instructions for formatting.
 
     Returns:
         new_path (str): The path of the copied ebook file.
@@ -248,12 +281,33 @@ def copy_ebook(ebook_path, ebook_info, output_dir):
     # Clean values for filesystem use
     author = ebook_info.get('author', 'Unknown Author').replace('/', '-')
     title = ebook_info.get('title', 'Untitled').replace('/', '-')
+    year = ebook_info.get('year', 'Unknown').replace('/', '-')
     
     # Determine category
     category = ebook_info.get('category', 'Uncategorized')
     
-    # Create new filename
-    new_filename = f"{title} - {author}{file_ext}"
+    # Check for custom filename format in instructions
+    if additional_instructions and "{title}" in additional_instructions and "{author}" in additional_instructions:
+        if "format for filenames" in additional_instructions.lower():
+            # Extract the format pattern
+            lines = additional_instructions.split('\n')
+            for line in lines:
+                if "format for filenames" in line.lower():
+                    # Get text within curly braces
+                    parts = re.findall(r'\{(.*?)\}', line)
+                    if parts and all(part in ['title', 'author', 'year'] for part in parts):
+                        # Extract format pattern
+                        if "{title} - {author} - {year}" in line:
+                            new_filename = f"{title} - {author} - {year}{file_ext}"
+                            break
+                        elif "{year} - {title} - {author}" in line:
+                            new_filename = f"{year} - {title} - {author}{file_ext}"
+                            break
+        else:
+            new_filename = f"{title} - {author}{file_ext}"
+    else:
+        # Default filename format
+        new_filename = f"{title} - {author}{file_ext}"
 
     # Create the new directory path based on category
     new_dir = os.path.join(output_dir, category)
@@ -303,7 +357,13 @@ def organize_ebooks(ebook_directory, output_dir, additional_instructions=""):
         ebook_data = extract_ebook_data(ebook_path)
         
         # Determine category
-        category = determine_category(ebook_data)
+        category = determine_category(ebook_data, additional_instructions)
+        
+        # Skip this book if category is None (per instructions)
+        if category is None:
+            print("Skipping book (doesn't match criteria in instructions)")
+            continue
+            
         ebook_data['category'] = category
         
         print(f"Title: {ebook_data['title']}")
@@ -311,7 +371,7 @@ def organize_ebooks(ebook_directory, output_dir, additional_instructions=""):
         print(f"Category: {category}")
         
         # Copy the ebook to the output directory
-        new_path = copy_ebook(ebook_path, ebook_data, output_dir)
+        new_path = copy_ebook(ebook_path, ebook_data, output_dir, additional_instructions)
         print(f"Copied to: {new_path}")
         print("-" * 40)
         
