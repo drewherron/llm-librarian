@@ -219,11 +219,38 @@ def determine_category(ebook_data, additional_instructions=""):
                     continue
                     
                 if lang in title or lang in text:
-                    return lang.capitalize()
+                    # Check for web frameworks and technologies
+                    web_frameworks = {
+                        'django': 'Python', 'flask': 'Python', 'fastapi': 'Python',
+                        'react': 'JavaScript', 'angular': 'JavaScript', 'vue': 'JavaScript',
+                        'node': 'JavaScript', 'express': 'JavaScript',
+                        'spring': 'Java', 'hibernate': 'Java',
+                        'rails': 'Ruby', 'sinatra': 'Ruby',
+                        'laravel': 'PHP', 'symfony': 'PHP'
+                    }
+                    
+                    for framework, parent_lang in web_frameworks.items():
+                        if framework in title.lower() or framework in text.lower():
+                            # Structure as Technology/Language/Framework
+                            return f"{parent_lang}/{framework.capitalize()}"
+                    
+                    # Structure as Technology/Language
+                    return f"Technology/{lang.capitalize()}"
             
             # If it's programming but not language-specific
             if any(term in title or term in text for term in ['programming', 'code', 'developer', 'software']):
-                return 'Programming'
+                return 'Technology/Programming'
+                
+            # Check for cloud platforms
+            cloud_platforms = ['aws', 'amazon web services', 'azure', 'gcp', 'google cloud']
+            for platform in cloud_platforms:
+                if platform in title.lower() or platform in text.lower():
+                    platform_name = {
+                        'aws': 'AWS', 'amazon web services': 'AWS',
+                        'azure': 'Azure', 
+                        'gcp': 'GCP', 'google cloud': 'GCP'
+                    }.get(platform, platform.upper())
+                    return f"Technology/{platform_name}"
             
             # Skip non-programming books if instructed
             if "skip all other types of books" in additional_instructions.lower():
@@ -241,7 +268,17 @@ def determine_category(ebook_data, additional_instructions=""):
     
     for keyword in tech_keywords:
         if keyword in title or keyword in text:
-            return 'Technology'
+            # More specific tech categorization
+            if 'python' in title or 'python' in text:
+                return 'Technology/Python'
+            elif 'javascript' in title or 'javascript' in text or 'js' in title:
+                return 'Technology/JavaScript'
+            elif 'java' in title or 'java' in text:
+                return 'Technology/Java'
+            elif 'web' in title or 'web' in text:
+                return 'Technology/Web'
+            else:
+                return 'Technology'
     
     # Check for fiction books
     fiction_keywords = ['novel', 'fiction', 'story', 'stories', 'fantasy', 'adventure', 
@@ -249,7 +286,17 @@ def determine_category(ebook_data, additional_instructions=""):
     
     for keyword in fiction_keywords:
         if keyword in title or keyword in text:
-            return 'Fiction'
+            # Subcategorize fiction
+            if 'fantasy' in title or 'fantasy' in text:
+                return 'Fiction/Fantasy'
+            elif 'sci-fi' in title or 'science fiction' in text:
+                return 'Fiction/Science Fiction'
+            elif 'mystery' in title or 'mystery' in text or 'thriller' in title:
+                return 'Fiction/Mystery'
+            elif 'romance' in title or 'romance' in text:
+                return 'Fiction/Romance'
+            else:
+                return 'Fiction'
     
     # Check for business books
     business_keywords = ['business', 'management', 'leadership', 'marketing', 'economics', 
@@ -309,7 +356,7 @@ def copy_ebook(ebook_path, ebook_info, output_dir, additional_instructions=""):
         # Default filename format
         new_filename = f"{title} - {author}{file_ext}"
 
-    # Create the new directory path based on category
+    # Create the new directory path based on category (handling hierarchical paths)
     new_dir = os.path.join(output_dir, category)
     os.makedirs(new_dir, exist_ok=True)
 
