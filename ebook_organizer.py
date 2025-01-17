@@ -175,12 +175,14 @@ def extract_ebook_data(ebook_path):
             "extracted_text": f"Unsupported file format: {file_ext}"
         }
 
-def determine_category(ebook_data, additional_instructions=""):
+def determine_category(ebook_data, additional_instructions="", existing_categories=None):
     """
     Determine a category for the ebook based on its metadata.
     
     Args:
         ebook_data (dict): A dictionary containing ebook metadata.
+        additional_instructions (str): Custom instructions for categorization.
+        existing_categories (list): List of existing category directories.
         
     Returns:
         category (str): The determined category.
@@ -196,6 +198,25 @@ def determine_category(ebook_data, additional_instructions=""):
         "Art & Design", "Religion & Spirituality", "Education", "Cooking",
         "Children's Books", "Poetry", "Drama", "Science Fiction", "Business & Management"
     ]
+    
+    # Check for existing categories - prefer to reuse them for consistency
+    if existing_categories:
+        title = ebook_data.get('title', '').lower()
+        text = ebook_data.get('extracted_text', '').lower()
+        
+        # Check if the book fits any existing category
+        for cat in existing_categories:
+            # For tech categories with language names
+            if cat.startswith('Technology/') or cat.startswith('Programming/'):
+                lang = cat.split('/')[-1].lower()
+                if lang and (lang in title or lang in text):
+                    return cat
+            # Check for other categories
+            elif '/' in cat:
+                main_cat, sub_cat = cat.split('/', 1)
+                sub_cat_lower = sub_cat.lower()
+                if sub_cat_lower in title or sub_cat_lower in text:
+                    return cat
     
     # Check if we have custom instructions for categorization
     if additional_instructions and "organize them into directories named after" in additional_instructions.lower():
@@ -375,10 +396,24 @@ def organize_ebooks(ebook_directory, output_dir, additional_instructions=""):
     Args:
         ebook_directory (str): The directory containing ebook files and subdirectories.
         output_dir (str): The output directory for organized ebooks.
+        additional_instructions (str): Custom instructions for categorization.
 
     Returns:
         organized_files (list): List of organized file paths
     """
+    # Get existing categories from output directory if it exists
+    existing_categories = []
+    if os.path.exists(output_dir) and os.path.isdir(output_dir):
+        for root, dirs, _ in os.walk(output_dir):
+            rel_path = os.path.relpath(root, output_dir)
+            if rel_path != '.' and not rel_path.startswith('..'):
+                existing_categories.append(rel_path)
+        
+        if existing_categories:
+            print(f"Found {len(existing_categories)} existing category directories")
+            print(f"Examples: {', '.join(existing_categories[:5])}" +
+                 ("..." if len(existing_categories) > 5 else ""))
+    
     organized_files = []
 
     # Recursively search for all ebook files
@@ -404,7 +439,7 @@ def organize_ebooks(ebook_directory, output_dir, additional_instructions=""):
         ebook_data = extract_ebook_data(ebook_path)
         
         # Determine category
-        category = determine_category(ebook_data, additional_instructions)
+        category = determine_category(ebook_data, additional_instructions, existing_categories)
         
         # Skip this book if category is None (per instructions)
         if category is None:
@@ -421,6 +456,18 @@ def organize_ebooks(ebook_directory, output_dir, additional_instructions=""):
         new_path = copy_ebook(ebook_path, ebook_data, output_dir, additional_instructions)
         print(f"Copied to: {new_path}")
         print("-" * 40)
+        
+        # Add to existing categories if it's a new category
+        if category not in existing_categories:
+            existing_categories.append(category)
+            print(f"Added new category: {category}")
+            
+            # If it's a hierarchical category, also add the parent category
+            if '/' in category:
+                parent_category = category.split('/', 1)[0]
+                if parent_category and parent_category not in existing_categories:
+                    existing_categories.append(parent_category)
+                    print(f"Added parent category: {parent_category}")
         
         organized_files.append({
             'original_path': ebook_path,
