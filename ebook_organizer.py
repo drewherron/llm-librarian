@@ -500,7 +500,11 @@ def main():
     confirmation = input(f"This will categorize all ebooks (PDF, EPUB, MOBI, AZW3) in {args.ebook_dir} and all subdirectories, and copy them to {args.output_dir}\nAre you sure you want to proceed? (y/n)\n>> ")
     
     if confirmation.lower() == "y":
-        print(f"Organizing ebooks...")
+        batch_size = args.batch_size
+        if batch_size > 1:
+            print(f"Organizing ebooks in batches of {batch_size}...")
+        else:
+            print(f"Organizing ebooks...")
         organized_files = organize_ebooks(args.ebook_dir, args.output_dir, additional_instructions)
         print(f"\nOrganized {len(organized_files)} ebook files to {args.output_dir}")
     else:
