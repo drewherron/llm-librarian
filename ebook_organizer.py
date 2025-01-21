@@ -24,6 +24,10 @@ def get_args():
     parser.add_argument("-i", "--instructions",
                        metavar="INSTRUCTION_FILE",
                        help="Path to a text file containing additional instructions for categorization")
+    parser.add_argument("-b", "--batch-size",
+                       type=int,
+                       default=1,
+                       help="Number of books to process in a single batch (default: 1)")
     return parser.parse_args()
 
 def extract_pdf_data(pdf_path):
