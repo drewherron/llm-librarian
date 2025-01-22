@@ -35,6 +35,11 @@ With custom organization instructions:
 python ebook_organizer.py /path/to/ebooks /path/to/output -i instructions.txt
 ```
 
+With batch processing (for improved efficiency):
+```bash
+python ebook_organizer.py /path/to/ebooks /path/to/output -b 5
+```
+
 ## Custom Instructions
 
 You can create text files with custom instructions for how to organize your ebooks. For example:
