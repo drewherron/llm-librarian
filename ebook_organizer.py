@@ -30,6 +30,33 @@ def get_args():
                        help="Number of books to process in a single batch (default: 1)")
     return parser.parse_args()
 
+def extract_year_from_date(date_str):
+    """Extract year from common date formats found in ebooks.
+    
+    Args:
+        date_str (str): Date string from metadata
+        
+    Returns:
+        str: Year if found, empty string otherwise
+    """
+    if not date_str:
+        return ""
+        
+    # Try different patterns
+    year_patterns = [
+        r'(20\d{2}|19\d{2})',  # 4-digit year (1900-2099)
+        r'D:(20\d{2}|19\d{2})',  # PDF date format D:YYYY
+        r'\d{2}/(20\d{2}|19\d{2})',  # MM/YYYY
+        r'(20\d{2}|19\d{2})/\d{2}'   # YYYY/MM
+    ]
+    
+    for pattern in year_patterns:
+        matches = re.findall(pattern, date_str)
+        if matches:
+            return matches[0]
+            
+    return ""
+
 def extract_pdf_data(pdf_path):
     """
     Extract metadata and text from the first few pages of a PDF file.
@@ -47,15 +74,26 @@ def extract_pdf_data(pdf_path):
             num_pages_to_read = min(5, len(pdf.pages))
             for i in range(num_pages_to_read):
                 page = pdf.pages[i]
-                extracted_text += page.extract_text() + "\n"
+                try:
+                    page_text = page.extract_text()
+                    if page_text:
+                        extracted_text += page_text + "\n"
+                except Exception as page_error:
+                    print(f"Warning: Could not extract text from page {i} of {pdf_path}: {page_error}")
 
             # Extract metadata
-            metadata = pdf.metadata
+            metadata = pdf.metadata or {}
             title = metadata.get("Title", "")
             author = metadata.get("Author", "")
             subject = metadata.get("Subject", "")
             creation_date = metadata.get("CreationDate", "")
+            modification_date = metadata.get("ModDate", "")
             num_pages = len(pdf.pages)
+            
+            # Extract year
+            year = extract_year_from_date(creation_date)
+            if not year and modification_date:
+                year = extract_year_from_date(modification_date)
 
         # Construct dictionary (metadata + extracted text)
         pdf_data = {
@@ -63,15 +101,23 @@ def extract_pdf_data(pdf_path):
             "author": author,
             "subject": subject,
             "creation_date": creation_date,
+            "year": year,
             "num_pages": num_pages,
             "extracted_text": extracted_text[:1000]  # Limit text size
         }
         return pdf_data
     except Exception as e:
         print(f"Error extracting data from PDF file {pdf_path}: {e}")
+        filename = os.path.basename(pdf_path)
+        # Try to extract title and author from filename
+        parts = filename.rsplit('.', 1)[0].split(' - ', 1)
+        title = parts[0] if len(parts) > 0 else filename
+        author = parts[1] if len(parts) > 1 else ""
+        
         return {
-            "title": "",
-            "author": "",
+            "title": title,
+            "author": author,
+            "year": "",
             "extracted_text": f"Error processing file: {e}"
         }
 
