@@ -393,7 +393,71 @@ def copy_ebook(ebook_path, ebook_info, output_dir, additional_instructions=""):
 
     return new_path
 
-def organize_ebooks(ebook_directory, output_dir, additional_instructions=""):
+def process_batch(batch_paths, existing_categories, output_dir, additional_instructions=""):
+    """Process a batch of ebooks together for efficiency.
+    
+    Args:
+        batch_paths (list): List of paths to ebook files in this batch
+        existing_categories (list): List of existing category directories
+        output_dir (str): Output directory for organized files
+        additional_instructions (str): Custom instructions for categorization
+        
+    Returns:
+        list: List of dictionaries with organized ebook information
+    """
+    results = []
+    
+    # Process each book in the batch
+    for ebook_path in batch_paths:
+        print(f"Processing {os.path.basename(ebook_path)}...")
+        
+        # Extract ebook data
+        ebook_data = extract_ebook_data(ebook_path)
+        
+        # Determine category
+        category = determine_category(ebook_data, additional_instructions, existing_categories)
+        
+        # Skip this book if category is None (per instructions)
+        if category is None:
+            print("Skipping book (doesn't match criteria in instructions)")
+            continue
+        
+        # Store category
+        ebook_data['category'] = category
+        
+        print(f"Title: {ebook_data['title']}")
+        print(f"Author: {ebook_data['author']}")
+        print(f"Category: {category}")
+        
+        # Copy the ebook to the output directory
+        new_path = copy_ebook(ebook_path, ebook_data, output_dir, additional_instructions)
+        print(f"Copied to: {new_path}")
+        print("-" * 40)
+        
+        # Add result to list
+        results.append({
+            'original_path': ebook_path,
+            'new_path': new_path,
+            'title': ebook_data['title'],
+            'author': ebook_data['author'],
+            'category': category
+        })
+        
+        # Add to existing categories if it's a new category
+        if category not in existing_categories:
+            existing_categories.append(category)
+            print(f"Added new category: {category}")
+            
+            # If it's a hierarchical category, also add the parent category
+            if '/' in category:
+                parent_category = category.split('/', 1)[0]
+                if parent_category and parent_category not in existing_categories:
+                    existing_categories.append(parent_category)
+                    print(f"Added parent category: {parent_category}")
+    
+    return results
+
+def organize_ebooks(ebook_directory, output_dir, additional_instructions="", batch_size=1):
     """
     Organize ebooks by copying them to appropriate directories.
 
@@ -401,6 +465,7 @@ def organize_ebooks(ebook_directory, output_dir, additional_instructions=""):
         ebook_directory (str): The directory containing ebook files and subdirectories.
         output_dir (str): The output directory for organized ebooks.
         additional_instructions (str): Custom instructions for categorization.
+        batch_size (int): Number of ebooks to process in each batch.
 
     Returns:
         organized_files (list): List of organized file paths
@@ -435,50 +500,61 @@ def organize_ebooks(ebook_directory, output_dir, additional_instructions=""):
     # Ensure the output directory exists
     os.makedirs(output_dir, exist_ok=True)
 
-    # Organize each found ebook
-    for ebook_path in ebook_files:
-        print(f"Processing {ebook_path}...")
-        
-        # Get ebook data
-        ebook_data = extract_ebook_data(ebook_path)
-        
-        # Determine category
-        category = determine_category(ebook_data, additional_instructions, existing_categories)
-        
-        # Skip this book if category is None (per instructions)
-        if category is None:
-            print("Skipping book (doesn't match criteria in instructions)")
-            continue
+    # Process in batches if batch_size > 1
+    if batch_size > 1:
+        num_batches = (len(ebook_files) + batch_size - 1) // batch_size  # Ceiling division
+        for i in range(0, len(ebook_files), batch_size):
+            batch = ebook_files[i:i+batch_size]
+            batch_num = i // batch_size + 1
+            print(f"\nProcessing batch {batch_num} of {num_batches} ({len(batch)} books)")
             
-        ebook_data['category'] = category
-        
-        print(f"Title: {ebook_data['title']}")
-        print(f"Author: {ebook_data['author']}")
-        print(f"Category: {category}")
-        
-        # Copy the ebook to the output directory
-        new_path = copy_ebook(ebook_path, ebook_data, output_dir, additional_instructions)
-        print(f"Copied to: {new_path}")
-        print("-" * 40)
-        
-        # Add to existing categories if it's a new category
-        if category not in existing_categories:
-            existing_categories.append(category)
-            print(f"Added new category: {category}")
+            batch_results = process_batch(batch, existing_categories, output_dir, additional_instructions)
+            organized_files.extend(batch_results)
+    else:
+        # Original single processing
+        for ebook_path in ebook_files:
+            print(f"Processing {ebook_path}...")
             
-            # If it's a hierarchical category, also add the parent category
-            if '/' in category:
-                parent_category = category.split('/', 1)[0]
-                if parent_category and parent_category not in existing_categories:
-                    existing_categories.append(parent_category)
-                    print(f"Added parent category: {parent_category}")
-        
-        organized_files.append({
-            'original_path': ebook_path,
-            'new_path': new_path,
-            'title': ebook_data['title'],
-            'author': ebook_data['author']
-        })
+            # Get ebook data
+            ebook_data = extract_ebook_data(ebook_path)
+            
+            # Determine category
+            category = determine_category(ebook_data, additional_instructions, existing_categories)
+            
+            # Skip this book if category is None (per instructions)
+            if category is None:
+                print("Skipping book (doesn't match criteria in instructions)")
+                continue
+                
+            ebook_data['category'] = category
+            
+            print(f"Title: {ebook_data['title']}")
+            print(f"Author: {ebook_data['author']}")
+            print(f"Category: {category}")
+            
+            # Copy the ebook to the output directory
+            new_path = copy_ebook(ebook_path, ebook_data, output_dir, additional_instructions)
+            print(f"Copied to: {new_path}")
+            print("-" * 40)
+            
+            # Add to existing categories if it's a new category
+            if category not in existing_categories:
+                existing_categories.append(category)
+                print(f"Added new category: {category}")
+                
+                # If it's a hierarchical category, also add the parent category
+                if '/' in category:
+                    parent_category = category.split('/', 1)[0]
+                    if parent_category and parent_category not in existing_categories:
+                        existing_categories.append(parent_category)
+                        print(f"Added parent category: {parent_category}")
+            
+            organized_files.append({
+                'original_path': ebook_path,
+                'new_path': new_path,
+                'title': ebook_data['title'],
+                'author': ebook_data['author']
+            })
         
     return organized_files
 
@@ -505,7 +581,7 @@ def main():
             print(f"Organizing ebooks in batches of {batch_size}...")
         else:
             print(f"Organizing ebooks...")
-        organized_files = organize_ebooks(args.ebook_dir, args.output_dir, additional_instructions)
+        organized_files = organize_ebooks(args.ebook_dir, args.output_dir, additional_instructions, batch_size)
         print(f"\nOrganized {len(organized_files)} ebook files to {args.output_dir}")
     else:
         print("\nAborting.\n")
