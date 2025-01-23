@@ -141,22 +141,53 @@ def extract_epub_data(epub_path):
         author = book.get_metadata('DC', 'creator')
         author = author[0][0] if author else ""
         
+        # Try to get publication date/year
+        year = ""
+        date = book.get_metadata('DC', 'date')
+        if date:
+            date_str = date[0][0]
+            year = extract_year_from_date(date_str)
+            
+        # If no year, try to get it from publisher info
+        if not year:
+            publisher = book.get_metadata('DC', 'publisher')
+            if publisher and len(publisher) > 0:
+                publisher_str = publisher[0][0]
+                year = extract_year_from_date(publisher_str)
+        
         # Extract text from the first few chapters/items
         extracted_text = ""
         count = 0
         for item in book.get_items():
             if item.get_type() == ebooklib.ITEM_DOCUMENT:
-                content = item.get_content().decode('utf-8')
-                # Simple HTML stripping
-                content = re.sub('<[^<]+?>', ' ', content)
-                extracted_text += content + "\n"
-                count += 1
-                if count >= 5:  # Limit to first 5 sections
-                    break
+                try:
+                    content = item.get_content().decode('utf-8', errors='replace')
+                    # Simple HTML stripping
+                    content = re.sub('<[^<]+?>', ' ', content)
+                    content = re.sub('\s+', ' ', content)  # Normalize whitespace
+                    extracted_text += content + "\n"
+                    count += 1
+                    if count >= 5:  # Limit to first 5 sections
+                        break
+                except Exception as item_error:
+                    print(f"Warning: Could not extract text from EPUB section: {item_error}")
+        
+        # If no text was extracted, try alternative methods
+        if not extracted_text:
+            for item in book.get_items():
+                if item.get_type() == ebooklib.ITEM_DOCUMENT:
+                    try:
+                        content = item.get_content()
+                        if content:
+                            extracted_text += f"Raw binary content detected: {len(content)} bytes\n"
+                            break
+                    except:
+                        pass
         
         epub_data = {
             "title": title,
             "author": author,
+            "year": year,
             "extracted_text": extracted_text[:1000]  # Limit text size
         }
         
@@ -164,9 +195,16 @@ def extract_epub_data(epub_path):
     
     except Exception as e:
         print(f"Error extracting data from EPUB file {epub_path}: {e}")
+        filename = os.path.basename(epub_path)
+        # Try to extract title and author from filename
+        parts = filename.rsplit('.', 1)[0].split(' - ', 1)
+        title = parts[0] if len(parts) > 0 else filename
+        author = parts[1] if len(parts) > 1 else ""
+        
         return {
-            "title": "",
-            "author": "",
+            "title": title,
+            "author": author,
+            "year": "",
             "extracted_text": f"Error processing file: {e}"
         }
 
