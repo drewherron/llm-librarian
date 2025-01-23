@@ -223,16 +223,48 @@ def extract_mobi_azw3_data(ebook_path):
     # In a production app, you'd use a dedicated library like mobi or KindleUnpack
     filename = os.path.basename(ebook_path)
     
-    # Try to extract title/author from filename pattern like "Title - Author.mobi"
-    parts = filename.rsplit('.', 1)[0].split(' - ', 1)
+    # Try to extract title/author/year from filename pattern like "Title - Author - 2020.mobi" or similar patterns
+    title = "Unknown"
+    author = "Unknown"
+    year = ""
     
-    title = parts[0] if len(parts) > 0 else "Unknown"
-    author = parts[1] if len(parts) > 1 else "Unknown"
+    # Try different patterns:
+    # Pattern 1: Title - Author.mobi
+    parts = filename.rsplit('.', 1)[0].split(' - ', 1)
+    if len(parts) >= 2:
+        title = parts[0].strip()
+        author = parts[1].strip()
+    elif len(parts) == 1:
+        title = parts[0].strip()
+    
+    # Pattern 2: Title - Author - Year.mobi
+    parts = filename.rsplit('.', 1)[0].split(' - ')
+    if len(parts) >= 3:
+        title = parts[0].strip()
+        author = parts[1].strip()
+        # Try to extract year from the last part
+        year_match = re.search(r'(19|20)\d{2}', parts[-1])
+        if year_match:
+            year = year_match.group(0)
+    
+    # If title contains year, try to extract it
+    if not year:
+        year_match = re.search(r'(19|20)\d{2}', title)
+        if year_match:
+            year = year_match.group(0)
+            
+    # If author contains year, try to extract it
+    if not year and author != "Unknown":
+        year_match = re.search(r'(19|20)\d{2}', author)
+        if year_match:
+            year = year_match.group(0)
     
     ebook_data = {
         "title": title,
         "author": author,
-        "extracted_text": f"Limited metadata extraction for {os.path.basename(ebook_path)}"
+        "year": year,
+        "extracted_text": f"Limited metadata extraction for {os.path.basename(ebook_path)}\n"
+                         f"Only filename-based metadata is available for MOBI/AZW3 files without specialized libraries."
     }
     
     return ebook_data
