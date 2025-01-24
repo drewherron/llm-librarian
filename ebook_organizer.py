@@ -2,6 +2,7 @@
 
 import os
 import re
+import json
 import sys
 import shutil
 import argparse
@@ -9,6 +10,8 @@ import warnings
 import pdfplumber
 import ebooklib
 from ebooklib import epub
+from langchain_openai import OpenAI
+from langchain_community.document_loaders import PDFPlumberLoader
 
 # Suppress specific pdfplumber warnings
 warnings.filterwarnings("ignore", message="CropBox missing from /Page, defaulting to MediaBox")
@@ -16,18 +19,18 @@ warnings.filterwarnings("ignore", message="CropBox missing from /Page, defaultin
 def get_args():
     parser = argparse.ArgumentParser(
         prog="python3 ebook_organizer.py",
-        description="Organize a collection of ebook files.")
+        description="Organize a collection of ebook files (PDF, EPUB, MOBI, AZW3) using an LLM.")
     parser.add_argument("ebook_dir",
                        help="Directory containing ebook files to organize")
     parser.add_argument("output_dir",
                        help="Directory where organized ebooks will be copied")
     parser.add_argument("-i", "--instructions",
                        metavar="INSTRUCTION_FILE",
-                       help="Path to a text file containing additional instructions for categorization")
+                       help="Path to a text file containing additional instructions for the LLM")
     parser.add_argument("-b", "--batch-size",
                        type=int,
                        default=1,
-                       help="Number of books to process in a single batch (default: 1)")
+                       help="Number of books to process in a single LLM request (default: 1)")
     return parser.parse_args()
 
 def extract_year_from_date(date_str):
@@ -65,61 +68,46 @@ def extract_pdf_data(pdf_path):
         pdf_path (str): The path to the PDF file.
 
     Returns:
-        pdf_data (dict): A dictionary containing metadata and extracted text.
+        pdf_data (dict): A dictionary containing title, author, subject, keywords, creation date, modification date, producer, creator, number of pages, and extracted text.
     """
+    # Load the PDF using PDFPlumberLoader
+    loader = PDFPlumberLoader(pdf_path)
+    documents = loader.load()
+
     # Extract text from the first 5 pages
+    num_pages_to_read = 5
     extracted_text = ""
-    try:
-        with pdfplumber.open(pdf_path) as pdf:
-            num_pages_to_read = min(5, len(pdf.pages))
-            for i in range(num_pages_to_read):
-                page = pdf.pages[i]
-                try:
-                    page_text = page.extract_text()
-                    if page_text:
-                        extracted_text += page_text + "\n"
-                except Exception as page_error:
-                    print(f"Warning: Could not extract text from page {i} of {pdf_path}: {page_error}")
+    for page in documents[:num_pages_to_read]:
+        extracted_text += page.page_content + "\n"
 
-            # Extract metadata
-            metadata = pdf.metadata or {}
-            title = metadata.get("Title", "")
-            author = metadata.get("Author", "")
-            subject = metadata.get("Subject", "")
-            creation_date = metadata.get("CreationDate", "")
-            modification_date = metadata.get("ModDate", "")
-            num_pages = len(pdf.pages)
-            
-            # Extract year
-            year = extract_year_from_date(creation_date)
-            if not year and modification_date:
-                year = extract_year_from_date(modification_date)
+    # Extract metadata
+    with pdfplumber.open(pdf_path) as pdf:
+        metadata = pdf.metadata
+        title = metadata.get("Title", "")
+        author = metadata.get("Author", "")
+        subject = metadata.get("Subject", "")
+        keywords = metadata.get("Keywords", "")
+        creation_date = metadata.get("CreationDate", "")
+        modification_date = metadata.get("ModDate", "")
+        producer = metadata.get("Producer", "")
+        creator = metadata.get("Creator", "")
+        num_pages = len(pdf.pages)
 
-        # Construct dictionary (metadata + extracted text)
-        pdf_data = {
-            "title": title,
-            "author": author,
-            "subject": subject,
-            "creation_date": creation_date,
-            "year": year,
-            "num_pages": num_pages,
-            "extracted_text": extracted_text[:1000]  # Limit text size
-        }
-        return pdf_data
-    except Exception as e:
-        print(f"Error extracting data from PDF file {pdf_path}: {e}")
-        filename = os.path.basename(pdf_path)
-        # Try to extract title and author from filename
-        parts = filename.rsplit('.', 1)[0].split(' - ', 1)
-        title = parts[0] if len(parts) > 0 else filename
-        author = parts[1] if len(parts) > 1 else ""
-        
-        return {
-            "title": title,
-            "author": author,
-            "year": "",
-            "extracted_text": f"Error processing file: {e}"
-        }
+    # Construct dictionary (metadata + extracted text)
+    pdf_data = {
+        "title": title,
+        "author": author,
+        "subject": subject,
+        "keywords": keywords,
+        "creation_date": creation_date,
+        "modification_date": modification_date,
+        "producer": producer,
+        "creator": creator,
+        "num_pages": num_pages,
+        "extracted_text": extracted_text[:1000]
+    }
+
+    return pdf_data
 
 def extract_epub_data(epub_path):
     """
@@ -133,78 +121,40 @@ def extract_epub_data(epub_path):
     """
     try:
         book = epub.read_epub(epub_path)
-        
+
         # Extract metadata
         title = book.get_metadata('DC', 'title')
         title = title[0][0] if title else ""
-        
+
         author = book.get_metadata('DC', 'creator')
         author = author[0][0] if author else ""
-        
-        # Try to get publication date/year
-        year = ""
-        date = book.get_metadata('DC', 'date')
-        if date:
-            date_str = date[0][0]
-            year = extract_year_from_date(date_str)
-            
-        # If no year, try to get it from publisher info
-        if not year:
-            publisher = book.get_metadata('DC', 'publisher')
-            if publisher and len(publisher) > 0:
-                publisher_str = publisher[0][0]
-                year = extract_year_from_date(publisher_str)
-        
+
         # Extract text from the first few chapters/items
         extracted_text = ""
         count = 0
         for item in book.get_items():
             if item.get_type() == ebooklib.ITEM_DOCUMENT:
-                try:
-                    content = item.get_content().decode('utf-8', errors='replace')
-                    # Simple HTML stripping
-                    content = re.sub('<[^<]+?>', ' ', content)
-                    content = re.sub('\s+', ' ', content)  # Normalize whitespace
-                    extracted_text += content + "\n"
-                    count += 1
-                    if count >= 5:  # Limit to first 5 sections
-                        break
-                except Exception as item_error:
-                    print(f"Warning: Could not extract text from EPUB section: {item_error}")
-        
-        # If no text was extracted, try alternative methods
-        if not extracted_text:
-            for item in book.get_items():
-                if item.get_type() == ebooklib.ITEM_DOCUMENT:
-                    try:
-                        content = item.get_content()
-                        if content:
-                            extracted_text += f"Raw binary content detected: {len(content)} bytes\n"
-                            break
-                    except:
-                        pass
-        
+                content = item.get_content().decode('utf-8')
+                # Simple HTML stripping (a more robust solution would use BeautifulSoup)
+                content = re.sub('<[^<]+?>', ' ', content)
+                extracted_text += content + "\n"
+                count += 1
+                if count >= 5:  # Limit to first 5 sections
+                    break
+
         epub_data = {
             "title": title,
             "author": author,
-            "year": year,
-            "extracted_text": extracted_text[:1000]  # Limit text size
+            "extracted_text": extracted_text[:1000]
         }
-        
+
         return epub_data
-    
+
     except Exception as e:
         print(f"Error extracting data from EPUB file {epub_path}: {e}")
-        filename = os.path.basename(epub_path)
-        # Try to extract title and author from filename
-        parts = filename.rsplit('.', 1)[0].split(' - ', 1)
-        title = parts[0] if len(parts) > 0 else filename
-        author = parts[1] if len(parts) > 1 else ""
-        
         return {
-            "title": title,
-            "author": author,
-            "year": "",
+            "title": "",
+            "author": "",
             "extracted_text": f"Error processing file: {e}"
         }
 
@@ -212,61 +162,29 @@ def extract_mobi_azw3_data(ebook_path):
     """
     Basic extraction for MOBI and AZW3 files.
     Note: For robust MOBI/AZW3 parsing, additional libraries may be needed.
-    
+
     Args:
         ebook_path (str): The path to the MOBI or AZW3 file.
-        
+
     Returns:
         ebook_data (dict): A dictionary containing minimal information.
     """
     # For MOBI/AZW3, we'll just extract the filename as fallback data
     # In a production app, you'd use a dedicated library like mobi or KindleUnpack
     filename = os.path.basename(ebook_path)
-    
-    # Try to extract title/author/year from filename pattern like "Title - Author - 2020.mobi" or similar patterns
-    title = "Unknown"
-    author = "Unknown"
-    year = ""
-    
-    # Try different patterns:
-    # Pattern 1: Title - Author.mobi
+
+    # Try to extract title/author from filename pattern like "Title - Author.mobi"
     parts = filename.rsplit('.', 1)[0].split(' - ', 1)
-    if len(parts) >= 2:
-        title = parts[0].strip()
-        author = parts[1].strip()
-    elif len(parts) == 1:
-        title = parts[0].strip()
-    
-    # Pattern 2: Title - Author - Year.mobi
-    parts = filename.rsplit('.', 1)[0].split(' - ')
-    if len(parts) >= 3:
-        title = parts[0].strip()
-        author = parts[1].strip()
-        # Try to extract year from the last part
-        year_match = re.search(r'(19|20)\d{2}', parts[-1])
-        if year_match:
-            year = year_match.group(0)
-    
-    # If title contains year, try to extract it
-    if not year:
-        year_match = re.search(r'(19|20)\d{2}', title)
-        if year_match:
-            year = year_match.group(0)
-            
-    # If author contains year, try to extract it
-    if not year and author != "Unknown":
-        year_match = re.search(r'(19|20)\d{2}', author)
-        if year_match:
-            year = year_match.group(0)
-    
+
+    title = parts[0] if len(parts) > 0 else "Unknown"
+    author = parts[1] if len(parts) > 1 else "Unknown"
+
     ebook_data = {
         "title": title,
         "author": author,
-        "year": year,
-        "extracted_text": f"Limited metadata extraction for {os.path.basename(ebook_path)}\n"
-                         f"Only filename-based metadata is available for MOBI/AZW3 files without specialized libraries."
+        "extracted_text": f"Limited metadata extraction for {os.path.basename(ebook_path)}"
     }
-    
+
     return ebook_data
 
 def extract_ebook_data(ebook_path):

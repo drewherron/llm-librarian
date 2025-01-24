@@ -1,4 +1,7 @@
 argparse
+langchain
+langchain_openai
+langchain-community
 pdfplumber
 ebooklib
 mobi
