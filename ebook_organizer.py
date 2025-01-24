@@ -213,170 +213,300 @@ def extract_ebook_data(ebook_path):
             "extracted_text": f"Unsupported file format: {file_ext}"
         }
 
-def determine_category(ebook_data, additional_instructions="", existing_categories=None):
+def generate_ebook_dict(ebook_path, categories, additional_instructions="", use_default_categories=True, existing_categories=None):
     """
-    Determine a category for the ebook based on its metadata.
+    Generate a dictionary with title, author, summary, and category for one ebook using an LLM.
+
+    Args:
+        ebook_path (str): The path to the ebook file.
+        categories (list): A list of categories to use for classification.
+
+    Returns:
+        ebook_info (dict): A dictionary containing title, author, summary, and category.
+    """
+    # Extract the ebook data
+    ebook_data = extract_ebook_data(ebook_path)
+
+    # Define the base prompt
+    llm_prompt = (
+        f"The following text and metadata has been extracted from an ebook. Please complete the following tasks:\n\n"
+        f"1. Suggest a suitable title for the document based on the metadata and extracted text.\n"
+        f"2. Look for the author in the metadata and extracted text, limit to ONE name if multiple are found, or state 'Unknown' if nothing is found.\n"
+        f"3. Identify the publication year if available, or estimate it based on content. Use the format YYYY. If unknown, use 'Unknown'.\n"
+        f"4. Attempt to provide a summary of the entire book, not just the extracted text.\n"
+    )
+
+    # Add categorization instructions based on whether we're using default categories
+    if use_default_categories:
+        llm_prompt += (
+            f"5. Categorize the document, preferably using a hierarchical directory structure with a '/' separator. \n"
+            f"For example: 'Technology/Python', 'Technology/JavaScript', 'Fiction/Science Fiction', etc.\n"
+            f"This creates a more organized structure with general categories and specific subcategories.\n"
+            f"Here are some example main categories for guidance: {', '.join(categories)}.\n"
+            f"You can use these examples or create more specific or appropriate categories.\n\n"
+        )
+    else:
+        if existing_categories and len(existing_categories) > 0:
+            llm_prompt += (
+                f"5. Determine a suitable category based on the instructions below. \n"
+                f"Preferably use a hierarchical structure with '/' separator, like 'Technology/Python' or 'Fiction/SciFi'.\n"
+                f"If appropriate, choose from or extend these EXISTING categories: {', '.join(existing_categories)}.\n"
+                f"Otherwise, create a new category that follows the instructions.\n\n"
+            )
+        else:
+            llm_prompt += (
+                f"5. Determine a suitable category based on the instructions below.\n"
+                f"Preferably use a hierarchical structure with '/' separator, like 'Technology/Python'.\n\n"
+            )
+
+    # Add any additional instructions
+    if additional_instructions:
+        llm_prompt += f"Additional instructions (these override previous instructions if there are conflicts):\n{additional_instructions}\n\n"
+
+    llm_prompt += (
+        f"Please provide the output in the following structured format:\n"
+        f"Title: <Title>\n"
+        f"Author: <Author>\n"
+        f"Year: <Year>\n"
+        f"Summary: <Summary>\n"
+        f"Category: <Category>\n\n"
+        f"Here is the ebook data:\n"
+        f"Title: {ebook_data.get('title', '')}\n"
+        f"Author: {ebook_data.get('author', '')}\n"
+        f"Creation Date: {ebook_data.get('creation_date', '')}\n\n"
+        f"Extracted Text:\n{ebook_data.get('extracted_text', '')}\n"
+    )
+
+    # Use the LLM
+    llm = OpenAI()
+    response = llm.invoke(llm_prompt)
+
+    print(f"LLM response: {response}\n")
+
+    # Extract the LLM response
+    lines = response.splitlines()
+
+    # Check for filename format instruction in the response
+    filename_format = None
+    for line in lines:
+        if line.startswith("Filename:") or line.startswith("Format:"):
+            filename_format = line.split(":", 1)[1].strip()
+    title, author, summary, category = "", "", "", ""
+
+    for line in lines:
+        if line.startswith("Title:"):
+            title = line[len("Title:"):].strip()
+        elif line.startswith("Author:"):
+            author = line[len("Author:"):].strip()
+        elif line.startswith("Year:"):
+            year = line[len("Year:"):].strip()
+        elif line.startswith("Summary:"):
+            summary = line[len("Summary:"):].strip()
+        elif line.startswith("Category:"):
+            category = line[len("Category:"):].strip()
+
+    print(f"title: {title}")
+    print(f"author: {author}")
+    print(f"year: {year if 'year' in locals() else 'Unknown'}")
+    print(f"summary: {summary}")
+    print(f"category: {category}")
+
+    # Create the final ebook_info dictionary
+    ebook_info = {
+        'title': title or ebook_data.get('title', ''),
+        'author': author or ebook_data.get('author', ''),
+        'year': year if 'year' in locals() else 'Unknown',
+        'summary': summary,
+        'category': category,
+        'original_path': ebook_path
+    }
+
+    # Add filename format if specified
+    if filename_format:
+        ebook_info['filename_format'] = filename_format
+
+    return ebook_info
+
+def process_batch(ebook_paths, categories, additional_instructions="", use_default_categories=True, existing_categories=None, max_retries=1):
+    """
+    Process a batch of ebooks with a single LLM call to improve token efficiency.
     
     Args:
-        ebook_data (dict): A dictionary containing ebook metadata.
-        additional_instructions (str): Custom instructions for categorization.
-        existing_categories (list): List of existing category directories.
+        ebook_paths (list): List of paths to ebook files to process
+        categories (list): A list of categories to use for classification
+        additional_instructions (str): Custom instructions for categorization
+        use_default_categories (bool): Whether to use default categories or custom ones
+        existing_categories (list): List of existing category directories
         
     Returns:
-        category (str): The determined category.
+        list: List of dictionaries with processed ebook information
     """
-    # Default category
-    category = 'Uncategorized'
+    # Extract data for all ebooks in the batch
+    ebooks_data = []
+    for path in ebook_paths:
+        ebooks_data.append({
+            'path': path,
+            'data': extract_ebook_data(path)
+        })
     
-    # List of standard categories
-    categories = [
-        "Fiction", "Non-Fiction", "History", "Philosophy", "Technology",
-        "Science", "Biography", "Self-Help", "Fantasy", "Mystery", "Romance",
-        "Horror", "Health & Wellness", "Travel", "Politics", "Economics",
-        "Art & Design", "Religion & Spirituality", "Education", "Cooking",
-        "Children's Books", "Poetry", "Drama", "Science Fiction", "Business & Management"
-    ]
+    # Create a single prompt for all ebooks
+    llm_prompt = (
+        f"I will provide you with data from {len(ebook_paths)} ebooks. Your task is to analyze each ebook and provide structured information.\n\n"
+        f"For each book, you must:\n"
+        f"1. Identify a suitable title based on the metadata and text\n"
+        f"2. Identify ONE author name, or state 'Unknown' if not found\n"
+        f"3. Identify the publication year (YYYY format) or estimate it, or use 'Unknown'\n"
+        f"4. Write a concise summary of the book\n"
+    )
     
-    # Check for existing categories - prefer to reuse them for consistency
-    if existing_categories:
-        title = ebook_data.get('title', '').lower()
-        text = ebook_data.get('extracted_text', '').lower()
+    # Add categorization instructions
+    if use_default_categories:
+        llm_prompt += (
+            f"5. Categorize each document, preferably using a hierarchical directory structure with a '/' separator\n"
+            f"For example: 'Technology/Python', 'Technology/JavaScript', 'Fiction/Science Fiction', etc.\n"
+            f"This creates a more organized structure with general categories and specific subcategories.\n"
+            f"Example main categories: {', '.join(categories[:10])}...\n"
+            f"You can use these examples or create more specific categories.\n\n"
+        )
+    else:
+        if existing_categories and len(existing_categories) > 0:
+            llm_prompt += (
+                f"5. Determine a suitable category based on the instructions below.\n" 
+                f"Preferably use a hierarchical structure with '/' separator, like 'Technology/Python'\n"
+                f"If appropriate, choose from or extend these EXISTING categories: {', '.join(existing_categories[:10])}...\n"
+                f"Otherwise, create a new category that follows the instructions.\n\n"
+            )
+        else:
+            llm_prompt += (
+                f"5. Determine a suitable category based on the instructions below.\n"
+                f"Preferably use a hierarchical structure with '/' separator, like 'Technology/Python'.\n\n"
+            )
+    
+    # Add any additional instructions
+    if additional_instructions:
+        llm_prompt += f"Additional instructions (these override previous instructions if there are conflicts):\n{additional_instructions}\n\n"
+    
+    # Format for responses - making it very explicit and structured
+    llm_prompt += (
+        f"For each book, you MUST respond using EXACTLY this format with no deviations:\n"
+        f"---BOOK 1 START---\n"
+        f"Title: The exact book title\n"
+        f"Author: Author name\n"
+        f"Year: Publication year (YYYY)\n"
+        f"Summary: A summary of the book\n"
+        f"Category: The category (preferably with hierarchy like Technology/Python)\n"
+        f"---BOOK 1 END---\n\n"
+        f"---BOOK 2 START---\n"
+        f"Title: The exact book title\n"
+        f"Author: Author name\n"
+        f"Year: Publication year (YYYY)\n"
+        f"Summary: A summary of the book\n"
+        f"Category: The category (preferably with hierarchy like Technology/Python)\n"
+        f"---BOOK 2 END---\n\n"
+        f"And so on for each book. The number in the START and END tags MUST match the book number.\n"
+        f"It's critical that you maintain this EXACT format for parsing.\n\n"
+    )
+    
+    # Add data for each ebook
+    for i, ebook in enumerate(ebooks_data, 1):
+        data = ebook['data']
+        llm_prompt += (
+            f"EBOOK {i} DATA:\n"
+            f"File: {os.path.basename(ebook['path'])}\n"
+            f"Title: {data.get('title', '')}\n"
+            f"Author: {data.get('author', '')}\n"
+            f"Creation Date: {data.get('creation_date', '')}\n\n"
+            f"Extracted Text:\n{data.get('extracted_text', '')}\n\n"
+            f"------------------\n\n"
+        )
+    
+    # Use the LLM
+    llm = OpenAI()
+    response = llm.invoke(llm_prompt)
+    
+    print(f"Processed batch of {len(ebook_paths)} books with a single LLM call\n")
+    
+    # Parse the responses
+    # Try a more flexible pattern that looks for book sections
+    book_sections = re.findall(r'---BOOK \d+ START---(.*?)---BOOK \d+ END---', response, re.DOTALL)
+    
+    # If parsing the batch response fails, fall back to processing books individually
+    if len(book_sections) == 0:
+        print("Batch processing response format not recognized. Falling back to individual processing.")
+        results = []
+        for path in ebook_paths:
+            print(f"Processing {os.path.basename(path)} individually...")
+            book_info = generate_ebook_dict(path, categories, additional_instructions, 
+                                          use_default_categories, existing_categories)
+            results.append(book_info)
+        return results
+    
+    results = []
+    
+    # Match responses to the original ebook paths
+    for i, section in enumerate(book_sections):
+        if i >= len(ebook_paths):
+            break
+            
+        # Initialize with default values
+        ebook_info = {
+            'title': '',
+            'author': 'Unknown',
+            'year': 'Unknown',
+            'summary': '',
+            'category': 'Uncategorized',
+            'original_path': ebook_paths[i]
+        }
         
-        # Check if the book fits any existing category
-        for cat in existing_categories:
-            # For tech categories with language names
-            if cat.startswith('Technology/') or cat.startswith('Programming/'):
-                lang = cat.split('/')[-1].lower()
-                if lang and (lang in title or lang in text):
-                    return cat
-            # Check for other categories
-            elif '/' in cat:
-                main_cat, sub_cat = cat.split('/', 1)
-                sub_cat_lower = sub_cat.lower()
-                if sub_cat_lower in title or sub_cat_lower in text:
-                    return cat
-    
-    # Check if we have custom instructions for categorization
-    if additional_instructions and "organize them into directories named after" in additional_instructions.lower():
-        # This is likely programming language categorization
-        if "programming language" in additional_instructions.lower():
-            # Check specifically for programming books
-            title = ebook_data.get('title', '').lower()
-            text = ebook_data.get('extracted_text', '').lower()
+        # Parse the section
+        lines = section.strip().split('\n')
+        for line in lines:
+            if line.startswith("Title:"):
+                ebook_info['title'] = line[len("Title:"):].strip() or os.path.basename(ebook_paths[i])
+            elif line.startswith("Author:"):
+                ebook_info['author'] = line[len("Author:"):].strip() or 'Unknown'
+            elif line.startswith("Year:"):
+                ebook_info['year'] = line[len("Year:"):].strip() or 'Unknown'
+            elif line.startswith("Summary:"):
+                ebook_info['summary'] = line[len("Summary:"):].strip()
+            elif line.startswith("Category:"):
+                ebook_info['category'] = line[len("Category:"):].strip() or 'Uncategorized'
+            elif line.startswith("Filename:") or line.startswith("Format:"):
+                ebook_info['filename_format'] = line.split(":", 1)[1].strip()
+        
+        # Use original data as fallback for missing fields
+        original_data = ebooks_data[i]['data']
+        if not ebook_info['title']:
+            ebook_info['title'] = original_data.get('title', '') or os.path.basename(ebook_paths[i])
+        if ebook_info['author'] == 'Unknown' and original_data.get('author'):
+            ebook_info['author'] = original_data.get('author')
             
-            # Common programming languages
-            languages = [
-                'python', 'javascript', 'java', 'c++', 'c#', 'ruby', 'go', 
-                'rust', 'swift', 'kotlin', 'php', 'typescript', 'perl', 
-                'scala', 'haskell', 'r', 'matlab', 'sql', 'html', 'css'
-            ]
-            
-            # Check for language-specific books
-            for lang in languages:
-                # Avoid false positives like "got" for "go"
-                if lang == 'go' and ('got' in title or 'got' in text or 'going' in title or 'going' in text):
-                    continue
-                    
-                if lang in title or lang in text:
-                    # Check for web frameworks and technologies
-                    web_frameworks = {
-                        'django': 'Python', 'flask': 'Python', 'fastapi': 'Python',
-                        'react': 'JavaScript', 'angular': 'JavaScript', 'vue': 'JavaScript',
-                        'node': 'JavaScript', 'express': 'JavaScript',
-                        'spring': 'Java', 'hibernate': 'Java',
-                        'rails': 'Ruby', 'sinatra': 'Ruby',
-                        'laravel': 'PHP', 'symfony': 'PHP'
-                    }
-                    
-                    for framework, parent_lang in web_frameworks.items():
-                        if framework in title.lower() or framework in text.lower():
-                            # Structure as Technology/Language/Framework
-                            return f"{parent_lang}/{framework.capitalize()}"
-                    
-                    # Structure as Technology/Language
-                    return f"Technology/{lang.capitalize()}"
-            
-            # If it's programming but not language-specific
-            if any(term in title or term in text for term in ['programming', 'code', 'developer', 'software']):
-                return 'Technology/Programming'
-                
-            # Check for cloud platforms
-            cloud_platforms = ['aws', 'amazon web services', 'azure', 'gcp', 'google cloud']
-            for platform in cloud_platforms:
-                if platform in title.lower() or platform in text.lower():
-                    platform_name = {
-                        'aws': 'AWS', 'amazon web services': 'AWS',
-                        'azure': 'Azure', 
-                        'gcp': 'GCP', 'google cloud': 'GCP'
-                    }.get(platform, platform.upper())
-                    return f"Technology/{platform_name}"
-            
-            # Skip non-programming books if instructed
-            if "skip all other types of books" in additional_instructions.lower():
-                return None
+        results.append(ebook_info)
+        
+    # Handle case where we got fewer responses than books
+    for i in range(len(book_sections), len(ebook_paths)):
+        print(f"Warning: No LLM response for book {i+1}, using metadata only")
+        original_data = ebooks_data[i]['data']
+        ebook_info = {
+            'title': original_data.get('title', '') or os.path.basename(ebook_paths[i]),
+            'author': original_data.get('author', '') or 'Unknown',
+            'year': 'Unknown',
+            'summary': 'No summary available',
+            'category': 'Uncategorized',
+            'original_path': ebook_paths[i]
+        }
+        results.append(ebook_info)
     
-    # Standard categorization if no custom instructions or the book doesn't match custom criteria
-    title = ebook_data.get('title', '').lower()
-    text = ebook_data.get('extracted_text', '').lower()
-    
-    # Check for technology/programming books
-    tech_keywords = ['programming', 'python', 'java', 'javascript', 'code', 'coding', 
-                    'development', 'software', 'computer', 'web', 'database', 'data', 
-                    'algorithm', 'cloud', 'network', 'security', 'hacking', 'linux', 
-                    'windows', 'server', 'machine learning', 'ai', 'artificial intelligence']
-    
-    for keyword in tech_keywords:
-        if keyword in title or keyword in text:
-            # More specific tech categorization
-            if 'python' in title or 'python' in text:
-                return 'Technology/Python'
-            elif 'javascript' in title or 'javascript' in text or 'js' in title:
-                return 'Technology/JavaScript'
-            elif 'java' in title or 'java' in text:
-                return 'Technology/Java'
-            elif 'web' in title or 'web' in text:
-                return 'Technology/Web'
-            else:
-                return 'Technology'
-    
-    # Check for fiction books
-    fiction_keywords = ['novel', 'fiction', 'story', 'stories', 'fantasy', 'adventure', 
-                       'mystery', 'thriller', 'horror', 'romance', 'sci-fi', 'science fiction']
-    
-    for keyword in fiction_keywords:
-        if keyword in title or keyword in text:
-            # Subcategorize fiction
-            if 'fantasy' in title or 'fantasy' in text:
-                return 'Fiction/Fantasy'
-            elif 'sci-fi' in title or 'science fiction' in text:
-                return 'Fiction/Science Fiction'
-            elif 'mystery' in title or 'mystery' in text or 'thriller' in title:
-                return 'Fiction/Mystery'
-            elif 'romance' in title or 'romance' in text:
-                return 'Fiction/Romance'
-            else:
-                return 'Fiction'
-    
-    # Check for business books
-    business_keywords = ['business', 'management', 'leadership', 'marketing', 'economics', 
-                        'finance', 'investing', 'stock', 'entrepreneur', 'startup']
-    
-    for keyword in business_keywords:
-        if keyword in title or keyword in text:
-            return 'Business & Management'
-    
-    # Return default category if no match
-    return category
+    return results
 
-def copy_ebook(ebook_path, ebook_info, output_dir, additional_instructions=""):
+def copy_ebook(ebook_path, ebook_info, output_dir):
     """
-    Renames the ebook and copies the file to the appropriate directory.
+    Renames the ebook and copies the file to the directory corresponding to its category.
 
     Args:
         ebook_path (str): The current path of the ebook file.
-        ebook_info (dict): A dictionary containing title, author.
+        ebook_info (dict): A dictionary containing title, author, summary, and category.
         output_dir (str): The base output directory for organizing the ebooks.
-        additional_instructions (str): Optional custom instructions for formatting.
 
     Returns:
         new_path (str): The path of the copied ebook file.
@@ -389,33 +519,23 @@ def copy_ebook(ebook_path, ebook_info, output_dir, additional_instructions=""):
     title = ebook_info.get('title', 'Untitled').replace('/', '-')
     year = ebook_info.get('year', 'Unknown').replace('/', '-')
     
-    # Determine category
-    category = ebook_info.get('category', 'Uncategorized')
-    
-    # Check for custom filename format in instructions
-    if additional_instructions and "{title}" in additional_instructions and "{author}" in additional_instructions:
-        if "format for filenames" in additional_instructions.lower():
-            # Extract the format pattern
-            lines = additional_instructions.split('\n')
-            for line in lines:
-                if "format for filenames" in line.lower():
-                    # Get text within curly braces
-                    parts = re.findall(r'\{(.*?)\}', line)
-                    if parts and all(part in ['title', 'author', 'year'] for part in parts):
-                        # Extract format pattern
-                        if "{title} - {author} - {year}" in line:
-                            new_filename = f"{title} - {author} - {year}{file_ext}"
-                            break
-                        elif "{year} - {title} - {author}" in line:
-                            new_filename = f"{year} - {title} - {author}{file_ext}"
-                            break
-        else:
-            new_filename = f"{title} - {author}{file_ext}"
+    # For category, we keep the slashes for hierarchical paths, but clean other special chars
+    category = ebook_info.get('category', 'Uncategorized').replace(':', '-').replace('\\', '-')
+
+    # Check if the filename format is specified in the book info (custom from instructions)
+    if ebook_info.get('filename_format'):
+        filename_format = ebook_info.get('filename_format')
+        # Replace placeholders with actual values
+        new_filename = filename_format
+        new_filename = new_filename.replace('{title}', title)
+        new_filename = new_filename.replace('{author}', author)
+        new_filename = new_filename.replace('{year}', year)
+        new_filename = new_filename + file_ext
     else:
         # Default filename format
         new_filename = f"{title} - {author}{file_ext}"
 
-    # Create the new directory path based on category (handling hierarchical paths)
+    # Create the new directory path based on category (may include subdirectories)
     new_dir = os.path.join(output_dir, category)
     os.makedirs(new_dir, exist_ok=True)
 
@@ -427,96 +547,37 @@ def copy_ebook(ebook_path, ebook_info, output_dir, additional_instructions=""):
 
     return new_path
 
-def process_batch(batch_paths, existing_categories, output_dir, additional_instructions=""):
-    """Process a batch of ebooks together for efficiency.
+# The process_batch function has already been replaced
+
+def organize_ebooks(ebook_directory, categories, output_dir, additional_instructions="", batch_size=1):
+    """Organize ebooks according to categories and instructions.
     
     Args:
-        batch_paths (list): List of paths to ebook files in this batch
-        existing_categories (list): List of existing category directories
-        output_dir (str): Output directory for organized files
-        additional_instructions (str): Custom instructions for categorization
-        
-    Returns:
-        list: List of dictionaries with organized ebook information
+        ebook_directory (str): Directory containing ebook files to organize
+        categories (list): List of example categories
+        output_dir (str): Directory where organized ebooks will be copied
+        additional_instructions (str): Custom instructions for the LLM
+        batch_size (int): Number of books to process in a single LLM request
+                          Set to 1 for individual processing
     """
-    results = []
-    
-    # Process each book in the batch
-    for ebook_path in batch_paths:
-        print(f"Processing {os.path.basename(ebook_path)}...")
-        
-        # Extract ebook data
-        ebook_data = extract_ebook_data(ebook_path)
-        
-        # Determine category
-        category = determine_category(ebook_data, additional_instructions, existing_categories)
-        
-        # Skip this book if category is None (per instructions)
-        if category is None:
-            print("Skipping book (doesn't match criteria in instructions)")
-            continue
-        
-        # Store category
-        ebook_data['category'] = category
-        
-        print(f"Title: {ebook_data['title']}")
-        print(f"Author: {ebook_data['author']}")
-        print(f"Category: {category}")
-        
-        # Copy the ebook to the output directory
-        new_path = copy_ebook(ebook_path, ebook_data, output_dir, additional_instructions)
-        print(f"Copied to: {new_path}")
-        print("-" * 40)
-        
-        # Add result to list
-        results.append({
-            'original_path': ebook_path,
-            'new_path': new_path,
-            'title': ebook_data['title'],
-            'author': ebook_data['author'],
-            'category': category
-        })
-        
-        # Add to existing categories if it's a new category
-        if category not in existing_categories:
-            existing_categories.append(category)
-            print(f"Added new category: {category}")
-            
-            # If it's a hierarchical category, also add the parent category
-            if '/' in category:
-                parent_category = category.split('/', 1)[0]
-                if parent_category and parent_category not in existing_categories:
-                    existing_categories.append(parent_category)
-                    print(f"Added parent category: {parent_category}")
-    
-    return results
+    """Organize ebooks according to categories and instructions."""
 
-def organize_ebooks(ebook_directory, output_dir, additional_instructions="", batch_size=1):
-    """
-    Organize ebooks by copying them to appropriate directories.
+    # Determine if we should use default categories or custom ones from instructions
+    use_default_categories = True
+    if additional_instructions and ("organize them into directories named after" in additional_instructions or
+                                  "custom categories" in additional_instructions):
+        use_default_categories = False
+        print("Using custom categorization from instructions file")
 
-    Args:
-        ebook_directory (str): The directory containing ebook files and subdirectories.
-        output_dir (str): The output directory for organized ebooks.
-        additional_instructions (str): Custom instructions for categorization.
-        batch_size (int): Number of ebooks to process in each batch.
-
-    Returns:
-        organized_files (list): List of organized file paths
-    """
     # Get existing categories from output directory if it exists
     existing_categories = []
     if os.path.exists(output_dir) and os.path.isdir(output_dir):
-        for root, dirs, _ in os.walk(output_dir):
-            rel_path = os.path.relpath(root, output_dir)
-            if rel_path != '.' and not rel_path.startswith('..'):
-                existing_categories.append(rel_path)
-        
+        existing_categories = [d for d in os.listdir(output_dir)
+                             if os.path.isdir(os.path.join(output_dir, d))]
         if existing_categories:
             print(f"Found {len(existing_categories)} existing category directories")
             print(f"Examples: {', '.join(existing_categories[:5])}" +
                  ("..." if len(existing_categories) > 5 else ""))
-    
     organized_files = []
 
     # Recursively search for all ebook files
@@ -530,48 +591,74 @@ def organize_ebooks(ebook_directory, output_dir, additional_instructions="", bat
     if len(ebook_files) == 0:
         print(f"No ebooks found in {ebook_directory}")
         return organized_files
-    
-    # Ensure the output directory exists
-    os.makedirs(output_dir, exist_ok=True)
 
-    # Process in batches if batch_size > 1
-    if batch_size > 1:
-        num_batches = (len(ebook_files) + batch_size - 1) // batch_size  # Ceiling division
+    # Process books in batches if batch_size > 1, otherwise process individually
+    if batch_size > 1 and len(ebook_files) > 1:
+        print(f"Processing books in batches of up to {batch_size}")
         for i in range(0, len(ebook_files), batch_size):
             batch = ebook_files[i:i+batch_size]
-            batch_num = i // batch_size + 1
-            print(f"\nProcessing batch {batch_num} of {num_batches} ({len(batch)} books)")
+            print(f"\nProcessing batch {i//batch_size + 1} ({len(batch)} books)")
             
-            batch_results = process_batch(batch, existing_categories, output_dir, additional_instructions)
-            organized_files.extend(batch_results)
+            # Process the batch with retries if needed
+            batch_results = process_batch(batch, categories, additional_instructions, 
+                                         use_default_categories, existing_categories, max_retries=1)
+            
+            # Handle each result in the batch
+            for ebook_dict in batch_results:
+                # Handle category assignment
+                category = ebook_dict.get("category", "Uncategorized")
+
+                # Keep the original format but replace any problematic characters except slashes
+                # We allow slashes for hierarchical categories like Technology/Python
+                ebook_dict["category"] = category.replace(":", "-").replace("\\", "-")
+                
+                # Check for empty category - this would be the only case we override
+                if not ebook_dict["category"] or ebook_dict["category"] == "":
+                    ebook_dict["category"] = "Uncategorized"
+
+                # Get the final category
+                category = ebook_dict['category']
+
+                # If this is a new category, add it to our existing categories list
+                if category not in existing_categories:
+                    existing_categories.append(category)
+                    print(f"Added new category: {category}")
+                    
+                    # If it's a hierarchical category, also add the parent category
+                    if '/' in category:
+                        parent_category = category.split('/', 1)[0]
+                        if parent_category and parent_category not in existing_categories:
+                            existing_categories.append(parent_category)
+                            print(f"Added parent category: {parent_category}")
+
+                # Copy the ebook and store its new location
+                ebook_dict['location'] = copy_ebook(ebook_dict['original_path'], ebook_dict, output_dir)
+
+                print(f"Processed: {os.path.basename(ebook_dict['original_path'])} → {ebook_dict['category']}")
+                organized_files.append(ebook_dict)
+                
     else:
-        # Original single processing
+        # Original individual processing
         for ebook_path in ebook_files:
             print(f"Processing {ebook_path}...")
+
+            ebook_dict = generate_ebook_dict(ebook_path, categories, additional_instructions, use_default_categories, existing_categories)
+
+            # Handle category assignment
+            category = ebook_dict.get("category", "Uncategorized")
+
+            # Keep the original format but replace any problematic characters except slashes
+            # We allow slashes for hierarchical categories like Technology/Python
+            ebook_dict["category"] = category.replace(":", "-").replace("\\", "-")
             
-            # Get ebook data
-            ebook_data = extract_ebook_data(ebook_path)
-            
-            # Determine category
-            category = determine_category(ebook_data, additional_instructions, existing_categories)
-            
-            # Skip this book if category is None (per instructions)
-            if category is None:
-                print("Skipping book (doesn't match criteria in instructions)")
-                continue
-                
-            ebook_data['category'] = category
-            
-            print(f"Title: {ebook_data['title']}")
-            print(f"Author: {ebook_data['author']}")
-            print(f"Category: {category}")
-            
-            # Copy the ebook to the output directory
-            new_path = copy_ebook(ebook_path, ebook_data, output_dir, additional_instructions)
-            print(f"Copied to: {new_path}")
-            print("-" * 40)
-            
-            # Add to existing categories if it's a new category
+            # Check for empty category - this would be the only case we override
+            if not ebook_dict["category"] or ebook_dict["category"] == "":
+                ebook_dict["category"] = "Uncategorized"
+
+            # Get the final category
+            category = ebook_dict['category']
+
+            # If this is a new category, add it to our existing categories list
             if category not in existing_categories:
                 existing_categories.append(category)
                 print(f"Added new category: {category}")
@@ -582,14 +669,13 @@ def organize_ebooks(ebook_directory, output_dir, additional_instructions="", bat
                     if parent_category and parent_category not in existing_categories:
                         existing_categories.append(parent_category)
                         print(f"Added parent category: {parent_category}")
-            
-            organized_files.append({
-                'original_path': ebook_path,
-                'new_path': new_path,
-                'title': ebook_data['title'],
-                'author': ebook_data['author']
-            })
-        
+
+            # Copy the ebook and store its new location
+            ebook_dict['location'] = copy_ebook(ebook_path, ebook_dict, output_dir)
+
+            print(f"Post-copy ebook_dict:\n{ebook_dict}")
+            organized_files.append(ebook_dict)
+
     return organized_files
 
 def main():
