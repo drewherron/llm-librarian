@@ -680,8 +680,20 @@ def organize_ebooks(ebook_directory, categories, output_dir, additional_instruct
 
 def main():
     args = get_args()
-    
-    # Check for instruction file
+
+    categories = [
+        "Fiction", "Non-Fiction", "History", "Philosophy", "Technology",
+        "Science", "Biography", "Self-Help", "Fantasy", "Mystery", "Romance",
+        "Horror", "Health & Wellness", "Travel", "Politics", "Economics",
+        "Art & Design", "Religion & Spirituality", "Education", "Cooking",
+        "Children's Books", "Poetry", "Drama", "Science Fiction", "Business & Management", "Unknown"
+    ]
+
+    ebook_dir = args.ebook_dir
+    output_dir = args.output_dir
+    batch_size = args.batch_size
+
+    # Check if instruction file exists and read it
     additional_instructions = ""
     if args.instructions:
         try:
@@ -691,18 +703,21 @@ def main():
         except Exception as e:
             print(f"Error loading instructions file: {e}")
             return
-    
-    # Confirm with the user
-    confirmation = input(f"This will categorize all ebooks (PDF, EPUB, MOBI, AZW3) in {args.ebook_dir} and all subdirectories, and copy them to {args.output_dir}\nAre you sure you want to proceed? (y/n)\n>> ")
-    
+
+    confirmation = input(f"This will categorize all ebooks (PDF, EPUB, MOBI, AZW3) in {ebook_dir} and all subdirectories, and copy them to {output_dir}\nAre you sure you want to proceed? (y/n)\n>> ")
+
     if confirmation.lower() == "y":
-        batch_size = args.batch_size
         if batch_size > 1:
             print(f"Organizing ebooks in batches of {batch_size}...")
         else:
             print(f"Organizing ebooks...")
-        organized_files = organize_ebooks(args.ebook_dir, args.output_dir, additional_instructions, batch_size)
-        print(f"\nOrganized {len(organized_files)} ebook files to {args.output_dir}")
+
+        # Ensure the output directory exists
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Organize files without maintaining an index
+        organized_files = organize_ebooks(ebook_dir, categories, output_dir, additional_instructions, batch_size)
+        print(f"\nOrganized {len(organized_files)} ebook files to {output_dir}")
     else:
         print("\nAborting.\n")
 
