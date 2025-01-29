@@ -547,7 +547,7 @@ def copy_ebook(ebook_path, ebook_info, output_dir):
 
     return new_path
 
-# The process_batch function has already been replaced
+# These functions are no longer needed since we're not maintaining an index
 
 def organize_ebooks(ebook_directory, categories, output_dir, additional_instructions="", batch_size=1):
     """Organize ebooks according to categories and instructions.
@@ -560,7 +560,6 @@ def organize_ebooks(ebook_directory, categories, output_dir, additional_instruct
         batch_size (int): Number of books to process in a single LLM request
                           Set to 1 for individual processing
     """
-    """Organize ebooks according to categories and instructions."""
 
     # Determine if we should use default categories or custom ones from instructions
     use_default_categories = True
