@@ -52,7 +52,7 @@ You can create text files with custom instructions for how to organize your eboo
 ```
 Only organize books about programming.
 Organize them into directories named after the programming language.
-Use the following format for filenames: {title} - {author} - {year}
+Use the following format for filenames: {year} - {title} - {author}
 ```
 
 See `instructions_example.txt` for a more detailed example.
