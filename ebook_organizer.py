@@ -39,6 +39,8 @@ def get_args():
                        help="Number of books to process in a single LLM request (default: 1)")
     return parser.parse_args()
 
+# This function is not in the target implementation, but we're keeping it for now
+# as it provides useful functionality for detecting years in dates.
 def extract_year_from_date(date_str):
     """Extract year from common date formats found in ebooks.
     
