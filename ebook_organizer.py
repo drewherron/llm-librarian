@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+"""
+Ebook Organizer - A tool to organize ebook files using AI.
+
+This script processes ebook files (PDF, EPUB, MOBI, AZW3) and organizes them 
+into categorized directories based on AI analysis of their content.
+"""
 
 import os
 import re
