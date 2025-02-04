@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-"""
-Ebook Organizer - A tool to organize ebook files using AI.
-
-This script processes ebook files (PDF, EPUB, MOBI, AZW3) and organizes them 
-into categorized directories based on AI analysis of their content.
-"""
-
 import os
 import re
 import json
@@ -22,6 +14,7 @@ from langchain_community.document_loaders import PDFPlumberLoader
 # Suppress specific pdfplumber warnings
 warnings.filterwarnings("ignore", message="CropBox missing from /Page, defaulting to MediaBox")
 
+# Allow command line arguments
 def get_args():
     parser = argparse.ArgumentParser(
         prog="python3 ebook_organizer.py",
@@ -38,35 +31,6 @@ def get_args():
                        default=1,
                        help="Number of books to process in a single LLM request (default: 1)")
     return parser.parse_args()
-
-# This function is not in the target implementation, but we're keeping it for now
-# as it provides useful functionality for detecting years in dates.
-def extract_year_from_date(date_str):
-    """Extract year from common date formats found in ebooks.
-    
-    Args:
-        date_str (str): Date string from metadata
-        
-    Returns:
-        str: Year if found, empty string otherwise
-    """
-    if not date_str:
-        return ""
-        
-    # Try different patterns
-    year_patterns = [
-        r'(20\d{2}|19\d{2})',  # 4-digit year (1900-2099)
-        r'D:(20\d{2}|19\d{2})',  # PDF date format D:YYYY
-        r'\d{2}/(20\d{2}|19\d{2})',  # MM/YYYY
-        r'(20\d{2}|19\d{2})/\d{2}'   # YYYY/MM
-    ]
-    
-    for pattern in year_patterns:
-        matches = re.findall(pattern, date_str)
-        if matches:
-            return matches[0]
-            
-    return ""
 
 def extract_pdf_data(pdf_path):
     """
@@ -198,15 +162,15 @@ def extract_mobi_azw3_data(ebook_path):
 def extract_ebook_data(ebook_path):
     """
     Extract data from an ebook file based on its extension.
-    
+
     Args:
         ebook_path (str): The path to the ebook file.
-        
+
     Returns:
         ebook_data (dict): A dictionary containing extracted data.
     """
     file_ext = os.path.splitext(ebook_path)[1].lower()
-    
+
     if file_ext == '.pdf':
         return extract_pdf_data(ebook_path)
     elif file_ext == '.epub':
@@ -507,56 +471,6 @@ def process_batch(ebook_paths, categories, additional_instructions="", use_defau
     
     return results
 
-def copy_ebook(ebook_path, ebook_info, output_dir):
-    """
-    Renames the ebook and copies the file to the directory corresponding to its category.
-
-    Args:
-        ebook_path (str): The current path of the ebook file.
-        ebook_info (dict): A dictionary containing title, author, summary, and category.
-        output_dir (str): The base output directory for organizing the ebooks.
-
-    Returns:
-        new_path (str): The path of the copied ebook file.
-    """
-    # Get the file extension
-    file_ext = os.path.splitext(ebook_path)[1].lower()
-
-    # Clean values for filesystem use
-    author = ebook_info.get('author', 'Unknown Author').replace('/', '-')
-    title = ebook_info.get('title', 'Untitled').replace('/', '-')
-    year = ebook_info.get('year', 'Unknown').replace('/', '-')
-    
-    # For category, we keep the slashes for hierarchical paths, but clean other special chars
-    category = ebook_info.get('category', 'Uncategorized').replace(':', '-').replace('\\', '-')
-
-    # Check if the filename format is specified in the book info (custom from instructions)
-    if ebook_info.get('filename_format'):
-        filename_format = ebook_info.get('filename_format')
-        # Replace placeholders with actual values
-        new_filename = filename_format
-        new_filename = new_filename.replace('{title}', title)
-        new_filename = new_filename.replace('{author}', author)
-        new_filename = new_filename.replace('{year}', year)
-        new_filename = new_filename + file_ext
-    else:
-        # Default filename format
-        new_filename = f"{title} - {author}{file_ext}"
-
-    # Create the new directory path based on category (may include subdirectories)
-    new_dir = os.path.join(output_dir, category)
-    os.makedirs(new_dir, exist_ok=True)
-
-    # Create the new full path for the file
-    new_path = os.path.join(new_dir, new_filename)
-
-    # Copy the file
-    shutil.copy2(ebook_path, new_path)
-
-    return new_path
-
-# These functions are no longer needed since we're not maintaining an index
-
 def organize_ebooks(ebook_directory, categories, output_dir, additional_instructions="", batch_size=1):
     """Organize ebooks according to categories and instructions.
     
@@ -568,6 +482,7 @@ def organize_ebooks(ebook_directory, categories, output_dir, additional_instruct
         batch_size (int): Number of books to process in a single LLM request
                           Set to 1 for individual processing
     """
+    """Organize ebooks according to categories and instructions."""
 
     # Determine if we should use default categories or custom ones from instructions
     use_default_categories = True
@@ -684,6 +599,56 @@ def organize_ebooks(ebook_directory, categories, output_dir, additional_instruct
             organized_files.append(ebook_dict)
 
     return organized_files
+
+def copy_ebook(ebook_path, ebook_info, output_dir):
+    """
+    Renames the ebook and copies the file to the directory corresponding to its category.
+
+    Args:
+        ebook_path (str): The current path of the ebook file.
+        ebook_info (dict): A dictionary containing title, author, summary, and category.
+        output_dir (str): The base output directory for organizing the ebooks.
+
+    Returns:
+        new_path (str): The path of the copied ebook file.
+    """
+    # Get the file extension
+    file_ext = os.path.splitext(ebook_path)[1].lower()
+
+    # Clean values for filesystem use
+    author = ebook_info.get('author', 'Unknown Author').replace('/', '-')
+    title = ebook_info.get('title', 'Untitled').replace('/', '-')
+    year = ebook_info.get('year', 'Unknown').replace('/', '-')
+    
+    # For category, we keep the slashes for hierarchical paths, but clean other special chars
+    category = ebook_info.get('category', 'Uncategorized').replace(':', '-').replace('\\', '-')
+
+    # Check if the filename format is specified in the book info (custom from instructions)
+    if ebook_info.get('filename_format'):
+        filename_format = ebook_info.get('filename_format')
+        # Replace placeholders with actual values
+        new_filename = filename_format
+        new_filename = new_filename.replace('{title}', title)
+        new_filename = new_filename.replace('{author}', author)
+        new_filename = new_filename.replace('{year}', year)
+        new_filename = new_filename + file_ext
+    else:
+        # Default filename format
+        new_filename = f"{title} - {author}{file_ext}"
+
+    # Create the new directory path based on category (may include subdirectories)
+    new_dir = os.path.join(output_dir, category)
+    os.makedirs(new_dir, exist_ok=True)
+
+    # Create the new full path for the file
+    new_path = os.path.join(new_dir, new_filename)
+
+    # Copy the file
+    shutil.copy2(ebook_path, new_path)
+
+    return new_path
+
+# These functions are no longer needed since we're not maintaining an index
 
 def main():
     args = get_args()
