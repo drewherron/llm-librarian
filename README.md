@@ -2,6 +2,8 @@
 
 A command-line tool that uses AI to automatically organize your ebook collection. It supports PDF, EPUB, MOBI, and AZW3 files.
 
+This works, but not quite well as I'd originally hoped... I may come back to it when I have more time.
+
 ## Features
 
 - Extract metadata and content from multiple ebook formats
@@ -14,8 +16,8 @@ A command-line tool that uses AI to automatically organize your ebook collection
 
 1. Clone this repository:
    ```bash
-   git clone https://github.com/drewherron/ebook-organizer.git
-   cd ebook-organizer
+   git clone https://github.com/drewherron/llm-librarian.git
+   cd llm-librarian
    ```
 
 2. Install required packages:
@@ -32,12 +34,12 @@ A command-line tool that uses AI to automatically organize your ebook collection
 
 Basic usage:
 ```bash
-python ebook_organizer.py /path/to/ebooks /path/to/output
+python llm_librarian.py /path/to/ebooks /path/to/output
 ```
 
 With custom organization instructions:
 ```bash
-python ebook_organizer.py /path/to/ebooks /path/to/output -i instructions.txt
+python llm_librarian.py /path/to/ebooks /path/to/output -i instructions.txt
 ```
 
 ## Custom Instructions
@@ -49,10 +51,3 @@ Only organize books about programming.
 Organize them into directories named after the programming language.
 Use the following format for filenames: {year} - {title} - {author}
 ```
-
-See `instructions_example.txt` for a more detailed example.
-
-## Notes
-
-- The program copies files rather than moving them, so your original files remain intact
-- MOBI and AZW3 support is basic due to limited metadata extraction capabilities
