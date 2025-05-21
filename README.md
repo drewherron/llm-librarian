@@ -1,8 +1,8 @@
-# Ebook Organizer
+# LLM Librarian
 
 A command-line tool that uses AI to automatically organize your ebook collection. It supports PDF, EPUB, MOBI, and AZW3 files.
 
-This works, but not quite well as I'd originally hoped... I may come back to it when I have more time.
+This is based on a school project I did a while ago. It works, but not quite well as I'd originally hoped... I may come back to it when I have more time.
 
 ## Features
 
